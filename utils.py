@@ -60,3 +60,14 @@ def fetch_match_info_json(year, tour_id, match_id):
     r = requests.get(url)
 
     return r.json()
+
+
+def fetch_widget_info_json(year, tour_id, match_id):
+    # Includes spin etc.
+
+    url = (f'https://www.atptour.com/-/ajax/HawkEyeSecondScreen/'
+           f'{year}/{tour_id}/{match_id}/widget')
+
+    r = requests.get(url)
+
+    return r.json()
