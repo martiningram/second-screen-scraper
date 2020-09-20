@@ -1,62 +1,59 @@
-import requests
-from bs4 import BeautifulSoup
+import sys
+from utils import (
+    get_tournament_result_links, get_second_screen_ids, fetch_match_info_json,
+    fetch_second_screen_json)
+from tqdm import tqdm
+from os import makedirs
+from os.path import join, isfile
+import json
 
 
-def get_tournament_result_links(year):
+year = sys.argv[1]
 
-    page = requests.get(
-        f'https://www.atptour.com/en/scores/results-archive?year={year}')
+tournament_links = get_tournament_result_links(year)
 
-    soup = BeautifulSoup(page.content, 'html.parser')
+target_dir = './results'
 
-    all_results = soup.find_all('tr', attrs={'class': 'tourney-result'})
+makedirs(target_dir, exist_ok=True)
 
-    # This is a bit tenuous as it relies on the class of the a element...
-    all_result_links = [x.find('a', attrs={'class':
-                                           'button-border'}).get('href') for x
-                        in all_results]
+match_info_dir = join(target_dir, 'match_info')
+ss_dir = join(target_dir, 'second_screen')
 
-    to_add = 'https://www.atptour.com'
+failed_files = open(join(target_dir, 'failed.txt'), 'w')
 
-    with_prefix = [to_add + x for x in all_result_links]
+makedirs(ss_dir, exist_ok=True)
+makedirs(match_info_dir, exist_ok=True)
 
-    return with_prefix
+cache = True
 
+for cur_link in tournament_links:
 
-def get_second_screen_ids(tournament_result_link):
+    print(cur_link)
 
-    page = requests.get(tournament_result_link)
+    ss_ids = get_second_screen_ids(cur_link)
 
-    soup = BeautifulSoup(page.content, 'html.parser')
+    if len(ss_ids) == 0:
+        continue
 
-    all_buttons = soup.find_all('a', attrs={'class': 'button-border'})
+    for cur_ss_id in tqdm(ss_ids):
 
-    all_links = [x.get('href') for x in all_buttons]
-    second_screen = [x for x in all_links if 'second-screen' in x]
+        cur_identifier = '_'.join(cur_ss_id.values())
 
-    split_second_screen = [x.split('/') for x in second_screen]
+        match_info_file = join(match_info_dir, cur_identifier + '.json')
+        ss_file = join(ss_dir, cur_identifier + '.json')
 
-    info = [{'year': x[-3], 'tour_id': x[-2], 'match_id': x[-1]}
-            for x in split_second_screen]
+        if isfile(match_info_file) and isfile(ss_file) and cache:
+            continue
 
-    return info
+        try:
+            ss_json = fetch_second_screen_json(**cur_ss_id)
+            match_json = fetch_match_info_json(**cur_ss_id)
+        except json.JSONDecodeError:
+            print(cur_identifier, file=failed_files)
+            continue
 
+        with open(match_info_file, 'w') as f:
+            json.dump(match_json, f)
 
-def fetch_second_screen_json(year, tour_id, match_id):
-
-    url = (f'https://www.atptour.com/-/ajax/HawkEyeSecondScreen/'
-           f'{year}/{tour_id}/{match_id}/')
-
-    r = requests.get(url)
-
-    return r.json()
-
-
-def fetch_match_info_json(year, tour_id, match_id):
-
-    url = (f'https://www.atptour.com/-/ajax/HawkEyeSecondScreen/MatchStats/'
-           f'en/False/{year}/{tour_id}/{match_id}')
-
-    r = requests.get(url)
-
-    return r.json()
+        with open(ss_file, 'w') as f:
+            json.dump(ss_json, f)
